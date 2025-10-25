@@ -1,0 +1,35 @@
+upstream blue_green_pool {
+    # Primary/backup configuration based on ACTIVE_POOL
+    server app_blue:${PORT} max_fails=1 fail_timeout=5s ${BLUE_BACKUP};
+    server app_green:${PORT} max_fails=1 fail_timeout=5s ${GREEN_BACKUP};
+}
+
+server {
+    listen 80;
+    
+    # Tight timeouts for fast failure detection
+    proxy_connect_timeout 500ms;
+    proxy_send_timeout 1s;
+    proxy_read_timeout 1s;
+    
+    # Retry policy: retry on error, timeout, and 5xx within same request
+    proxy_next_upstream error timeout http_500 http_502 http_503 http_504;
+    proxy_next_upstream_tries 2;
+    proxy_next_upstream_timeout 2s;
+    
+    # Forward headers and preserve upstream headers
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    
+    # Ensure upstream headers are forwarded unchanged
+    proxy_pass_header X-App-Pool;
+    proxy_pass_header X-Release-Id;
+    
+    location / {
+        proxy_pass http://blue_green_pool;
+    }
+    
+    location /healthz {
+        proxy_pass http://blue_green_pool/healthz;
+    }
+}
